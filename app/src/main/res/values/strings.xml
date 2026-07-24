@@ -57,4 +57,14 @@
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
+    <string-array name="horizon_lock_entries">
+        <item>Off</item>
+        <item>Auto</item>
+        <item>On</item>
+    </string-array>
+    <string-array name="horizon_lock_values">
+        <item>off</item>
+        <item>auto</item>
+        <item>on</item>
+    </string-array>
 </resources>

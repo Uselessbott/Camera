@@ -16,10 +16,10 @@ class CameraXInitializer(private val activity: BaseSimpleActivity) {
         outputUri: Uri?,
         isThirdPartyIntent: Boolean,
         initInPhotoMode: Boolean,
+        horizonLockEnabled: Boolean = false
     ): CameraXPreview {
         val cameraErrorHandler = newCameraErrorHandler()
-        val mediaOutputHelper =
-            newMediaOutputHelper(cameraErrorHandler, outputUri, isThirdPartyIntent)
+        val mediaOutputHelper = newMediaOutputHelper(cameraErrorHandler, outputUri, isThirdPartyIntent)
         return CameraXPreview(
             activity,
             previewView,
@@ -29,6 +29,7 @@ class CameraXInitializer(private val activity: BaseSimpleActivity) {
             listener,
             isThirdPartyIntent = isThirdPartyIntent,
             initInPhotoMode = initInPhotoMode,
+            horizonLockEnabled = horizonLockEnabled
         )
     }
 
@@ -37,12 +38,7 @@ class CameraXInitializer(private val activity: BaseSimpleActivity) {
         outputUri: Uri?,
         isThirdPartyIntent: Boolean,
     ): MediaOutputHelper {
-        return MediaOutputHelper(
-            activity,
-            cameraErrorHandler,
-            outputUri,
-            isThirdPartyIntent,
-        )
+        return MediaOutputHelper(activity, cameraErrorHandler, outputUri, isThirdPartyIntent)
     }
 
     private fun newCameraErrorHandler(): CameraErrorHandler {

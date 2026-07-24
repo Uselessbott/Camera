@@ -15,6 +15,15 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- TextureView used when Horizon Lock is enabled -->
+    <TextureView
+        android:id="@+id/texture_preview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <View
         android:id="@+id/shutter_animation"
         android:layout_width="match_parent"

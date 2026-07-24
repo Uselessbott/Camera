@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <PreferenceCategory android:title="Horizon Lock">
+        <ListPreference
+            android:key="horizon_lock_mode"
+            android:title="Mode"
+            android:summary="OFF / AUTO / ON"
+            android:entries="@array/horizon_lock_entries"
+            android:entryValues="@array/horizon_lock_values"
+            android:defaultValue="off" />
+    </PreferenceCategory>
+
+</PreferenceScreen>

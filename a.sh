@@ -1,3 +1,178 @@
+
+#!/bin/bash
+set -e
+
+echo "=== Applying Horizon Lock to Fossify Camera ==="
+
+# 1. Layout: replace PreviewView with an overlay that switches between PreviewView and TextureView
+cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/view_holder"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:animateLayoutChanges="true"
+    android:background="@android:color/black">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- TextureView used when Horizon Lock is enabled -->
+    <TextureView
+        android:id="@+id/texture_preview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:id="@+id/shutter_animation"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:background="@android:color/black" />
+
+    <FrameLayout
+        android:id="@+id/top_options"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <include
+            android:id="@+id/layout_top"
+            layout="@layout/layout_top" />
+
+        <include
+            android:id="@+id/layout_flash"
+            layout="@layout/layout_flash" />
+
+        <include
+            android:id="@+id/layout_timer"
+            layout="@layout/layout_timer" />
+
+    </FrameLayout>
+
+    <TextSwitcher
+        android:id="@+id/timer_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/bottom_overlay"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/top_options" />
+
+    <View
+        android:id="@+id/bottom_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="@color/overlay_color"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/camera_mode_holder" />
+
+    <RelativeLayout
+        android:id="@+id/camera_mode_holder"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="@dimen/medium_margin"
+        app:layout_constraintBottom_toTopOf="@id/shutter"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/camera_mode_tab"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/big_margin"
+            android:background="@android:color/transparent"
+            app:tabBackground="@drawable/tab_indicator"
+            app:tabIndicator="@null"
+            app:tabMode="auto"
+            app:tabRippleColor="@null"
+            app:tabSelectedTextColor="@color/md_grey_600_dark"
+            app:tabTextColor="@color/md_grey_white">
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/video" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/photo" />
+
+        </com.google.android.material.tabs.TabLayout>
+    </RelativeLayout>
+
+    <TextView
+        android:id="@+id/video_rec_curr_timer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="@dimen/smaller_margin"
+        android:textColor="@android:color/white"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/shutter"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        tools:text="00:00"
+        tools:visibility="visible" />
+
+    <ImageView
+        android:id="@+id/last_photo_video_preview"
+        android:layout_width="@dimen/icon_size"
+        android:layout_height="@dimen/icon_size"
+        android:background="@drawable/camera_button_background"
+        android:contentDescription="@string/view_last_media"
+        android:padding="@dimen/tiny_margin"
+        app:layout_constraintBottom_toBottomOf="@id/shutter"
+        app:layout_constraintEnd_toStartOf="@id/shutter"
+        app:layout_constraintHorizontal_chainStyle="spread"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/shutter"
+        tools:src="@tools:sample/backgrounds/scenic" />
+
+    <ImageView
+        android:id="@+id/shutter"
+        android:layout_width="@dimen/large_icon_size"
+        android:layout_height="@dimen/large_icon_size"
+        android:layout_marginBottom="@dimen/big_margin"
+        android:contentDescription="@string/shutter"
+        android:src="@drawable/ic_shutter_animated"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintVertical_bias="1" />
+
+    <ImageView
+        android:id="@+id/toggle_camera"
+        android:layout_width="@dimen/icon_size"
+        android:layout_height="@dimen/icon_size"
+        android:background="@drawable/camera_button_background"
+        android:contentDescription="@string/toggle_camera"
+        android:padding="@dimen/medium_margin"
+        android:src="@drawable/ic_flip_camera_vector"
+        app:layout_constraintBottom_toBottomOf="@id/shutter"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/shutter"
+        app:layout_constraintTop_toTopOf="@id/shutter" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+EOF
+
+# 2. Overwrite CameraXPreview.kt with integrated horizon lock support
+cat << 'EOF' > app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
 package org.fossify.camera.implementations
 
 import android.annotation.SuppressLint
@@ -624,3 +799,257 @@ class CameraXPreview(
         handler.post { choreographer.postFrameCallback(frameCallback) }
     }
 }
+EOF
+
+# 3. Overwrite CameraXInitializer.kt with added horizonLockEnabled parameter
+cat << 'EOF' > app/src/main/kotlin/org/fossify/camera/implementations/CameraXInitializer.kt
+package org.fossify.camera.implementations
+
+import android.net.Uri
+import androidx.camera.view.PreviewView
+import org.fossify.camera.helpers.CameraErrorHandler
+import org.fossify.camera.helpers.MediaOutputHelper
+import org.fossify.camera.helpers.MediaSoundHelper
+import org.fossify.commons.activities.BaseSimpleActivity
+
+class CameraXInitializer(private val activity: BaseSimpleActivity) {
+
+    fun createCameraXPreview(
+        previewView: PreviewView,
+        listener: CameraXPreviewListener,
+        mediaSoundHelper: MediaSoundHelper,
+        outputUri: Uri?,
+        isThirdPartyIntent: Boolean,
+        initInPhotoMode: Boolean,
+        horizonLockEnabled: Boolean = false
+    ): CameraXPreview {
+        val cameraErrorHandler = newCameraErrorHandler()
+        val mediaOutputHelper = newMediaOutputHelper(cameraErrorHandler, outputUri, isThirdPartyIntent)
+        return CameraXPreview(
+            activity,
+            previewView,
+            mediaSoundHelper,
+            mediaOutputHelper,
+            cameraErrorHandler,
+            listener,
+            isThirdPartyIntent = isThirdPartyIntent,
+            initInPhotoMode = initInPhotoMode,
+            horizonLockEnabled = horizonLockEnabled
+        )
+    }
+
+    private fun newMediaOutputHelper(
+        cameraErrorHandler: CameraErrorHandler,
+        outputUri: Uri?,
+        isThirdPartyIntent: Boolean,
+    ): MediaOutputHelper {
+        return MediaOutputHelper(activity, cameraErrorHandler, outputUri, isThirdPartyIntent)
+    }
+
+    private fun newCameraErrorHandler(): CameraErrorHandler {
+        return CameraErrorHandler(activity)
+    }
+}
+EOF
+
+# 4. Update HorizonLockEncoder to include audio recording (basic AAC)
+cat << 'EOF' > app/src/main/java/com/fossify/camera/horizonlock/HorizonLockEncoder.kt
+package com.fossify.camera.horizonlock
+
+import android.media.*
+import android.os.Handler
+import android.os.HandlerThread
+import android.view.Surface
+import java.io.File
+import java.nio.ByteBuffer
+
+class HorizonLockEncoder(
+    private val outputFile: File,
+    private val videoWidth: Int,
+    private val videoHeight: Int,
+    private val videoFrameRate: Int,
+    private val videoBitRate: Int,
+    private val audioSampleRate: Int = 44100,
+    private val audioChannels: Int = 2,
+    private val audioBitRate: Int = 128000
+) {
+    private lateinit var videoCodec: MediaCodec
+    private lateinit var audioCodec: MediaCodec
+    private lateinit var muxer: MediaMuxer
+    private var videoInputSurface: Surface? = null
+    private var isRunning = false
+    private var videoTrackIndex = -1
+    private var audioTrackIndex = -1
+    private var muxerStarted = false
+    private val encoderThread = HandlerThread("HorizonLockEncoder").apply { start() }
+    private val encoderHandler = Handler(encoderThread.looper)
+    private var audioRecord: AudioRecord? = null
+    private var audioRecordThread: Thread? = null
+
+    fun prepare(): Surface {
+        // Video encoder
+        val videoFormat = MediaFormat.createVideoFormat(MediaFormat.MIME_TYPE_AVC, videoWidth, videoHeight)
+        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, videoBitRate)
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, videoFrameRate)
+        videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+        videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+
+        videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIME_TYPE_AVC)
+        videoCodec.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        videoInputSurface = videoCodec.createInputSurface()
+        videoCodec.start()
+
+        // Audio encoder
+        val audioFormat = MediaFormat.createAudioFormat(MediaFormat.MIME_TYPE_AAC, audioSampleRate, audioChannels)
+        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, audioBitRate)
+        audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+
+        audioCodec = MediaCodec.createEncoderByType(MediaFormat.MIME_TYPE_AAC)
+        audioCodec.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        audioCodec.start()
+
+        // Muxer
+        muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        isRunning = true
+        return videoInputSurface!!
+    }
+
+    fun start() {
+        encoderHandler.post {
+            drainVideoEncoder()
+        }
+        startAudioRecording()
+    }
+
+    private fun startAudioRecording() {
+        val minBufferSize = AudioRecord.getMinBufferSize(audioSampleRate, 
+            if (audioChannels == 1) android.media.AudioFormat.CHANNEL_IN_MONO else android.media.AudioFormat.CHANNEL_IN_STEREO,
+            android.media.AudioFormat.ENCODING_PCM_16BIT)
+        audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, audioSampleRate,
+            if (audioChannels == 1) android.media.AudioFormat.CHANNEL_IN_MONO else android.media.AudioFormat.CHANNEL_IN_STEREO,
+            android.media.AudioFormat.ENCODING_PCM_16BIT, minBufferSize * 2)
+        audioRecord?.startRecording()
+
+        audioRecordThread = Thread {
+            val buffer = ByteBuffer.allocateDirect(minBufferSize)
+            while (isRunning) {
+                val readBytes = audioRecord?.read(buffer, minBufferSize) ?: 0
+                if (readBytes > 0) {
+                    buffer.position(0)
+                    buffer.limit(readBytes)
+                    encoderHandler.post {
+                        val inputIndex = audioCodec.dequeueInputBuffer(10_000)
+                        if (inputIndex >= 0) {
+                            val inputBuffer = audioCodec.getInputBuffer(inputIndex)
+                            inputBuffer?.clear()
+                            inputBuffer?.put(buffer)
+                            audioCodec.queueInputBuffer(inputIndex, 0, readBytes, System.nanoTime() / 1000, 0)
+                        }
+                    }
+                }
+            }
+            audioRecord?.stop()
+            audioRecord?.release()
+        }.apply { start() }
+    }
+
+    fun stop() {
+        isRunning = false
+        encoderHandler.post {
+            videoCodec.signalEndOfInputStream()
+            drainVideoEncoder()
+            videoCodec.stop()
+            videoCodec.release()
+
+            audioCodec.signalEndOfInputStream()
+            drainAudioEncoder()
+            audioCodec.stop()
+            audioCodec.release()
+
+            muxer.stop()
+            muxer.release()
+            encoderThread.quitSafely()
+        }
+    }
+
+    private fun drainVideoEncoder() {
+        val bufferInfo = MediaCodec.BufferInfo()
+        while (isRunning || true) {
+            val outputIndex = videoCodec.dequeueOutputBuffer(bufferInfo, 10_000)
+            if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                if (muxerStarted) throw RuntimeException("video format changed twice")
+                videoTrackIndex = muxer.addTrack(videoCodec.outputFormat)
+                if (audioTrackIndex >= 0 && !muxerStarted) {
+                    muxer.start()
+                    muxerStarted = true
+                }
+            } else if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                if (!isRunning) break
+            } else if (outputIndex >= 0) {
+                val outputBuffer = videoCodec.getOutputBuffer(outputIndex)
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                    videoCodec.releaseOutputBuffer(outputIndex, false)
+                    continue
+                }
+                if (bufferInfo.size != 0 && muxerStarted) {
+                    outputBuffer?.position(bufferInfo.offset)
+                    outputBuffer?.limit(bufferInfo.offset + bufferInfo.size)
+                    muxer.writeSampleData(videoTrackIndex, outputBuffer!!, bufferInfo)
+                }
+                videoCodec.releaseOutputBuffer(outputIndex, false)
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+            }
+        }
+    }
+
+    private fun drainAudioEncoder() {
+        val bufferInfo = MediaCodec.BufferInfo()
+        while (true) {
+            val outputIndex = audioCodec.dequeueOutputBuffer(bufferInfo, 10_000)
+            if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                audioTrackIndex = muxer.addTrack(audioCodec.outputFormat)
+                if (videoTrackIndex >= 0 && !muxerStarted) {
+                    muxer.start()
+                    muxerStarted = true
+                }
+            } else if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                if (!isRunning) break
+            } else if (outputIndex >= 0) {
+                val outputBuffer = audioCodec.getOutputBuffer(outputIndex)
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                    audioCodec.releaseOutputBuffer(outputIndex, false)
+                    continue
+                }
+                if (bufferInfo.size != 0 && muxerStarted) {
+                    outputBuffer?.position(bufferInfo.offset)
+                    outputBuffer?.limit(bufferInfo.offset + bufferInfo.size)
+                    muxer.writeSampleData(audioTrackIndex, outputBuffer!!, bufferInfo)
+                }
+                audioCodec.releaseOutputBuffer(outputIndex, false)
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+            }
+        }
+    }
+}
+EOF
+
+echo "=== Horizon Lock classes and layout updated ==="
+
+echo ""
+echo "=== MANUAL STEP REQUIRED FOR MainActivity.kt ==="
+echo "Please modify your MainActivity.kt to:"
+echo "1. Read horizon lock preference:"
+echo '   val prefs = PreferenceManager.getDefaultSharedPreferences(this)'
+echo '   val horizonLockMode = prefs.getString("horizon_lock_mode", "off") ?: "off"'
+echo '   val horizonLockEnabled = horizonLockMode != "off"'
+echo ""
+echo "2. Pass horizonLockEnabled to CameraXInitializer.createCameraXPreview(...):"
+echo "   cameraXInitializer.createCameraXPreview("
+echo "       ...,"
+echo "       horizonLockEnabled = horizonLockEnabled"
+echo "   )"
+echo ""
+echo "If you have a SettingsFragment, ensure it loads the preference XML (e.g., addPreferencesFromResource(R.xml.preferences) and that horizon lock preference is present)."
+echo "If preferences.xml is not found, create it with the content provided in the earlier script."
+echo ""
+echo "Horizon Lock integration complete. Sync Gradle and test."
