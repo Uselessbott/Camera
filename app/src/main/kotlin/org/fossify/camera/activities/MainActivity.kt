@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.provider.MediaStore
+import android.util.Log
 import android.view.*
 import android.widget.LinearLayout
 import androidx.constraintlayout.widget.ConstraintSet
@@ -44,6 +45,7 @@ import org.fossify.commons.helpers.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import android.preference.PreferenceManager
+import java.io.File
 
 class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, CameraXPreviewListener {
     private companion object {
@@ -403,9 +405,15 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
 
             toggleHorizonLock.setShadowIcon(R.drawable.ic_horizon_lock_vector)
             toggleHorizonLock.setOnClickListener {
-                horizonLockEnabled = !horizonLockEnabled
-                toggleHorizonLock.isSelected = horizonLockEnabled
-                mPreview?.toggleHorizonLock(horizonLockEnabled)
+                try {
+                    horizonLockEnabled = !horizonLockEnabled
+                    toggleHorizonLock.isSelected = horizonLockEnabled
+                    mPreview?.toggleHorizonLock(horizonLockEnabled)
+                } catch (t: Throwable) {
+                    File(filesDir, "horizon_crash.txt")
+                        .writeText(Log.getStackTraceString(t))
+                    throw t
+                }
             }
         }
 
