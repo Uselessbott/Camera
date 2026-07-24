@@ -505,13 +505,175 @@ class CameraXPreview(
 
     override fun isInPhotoMode(): Boolean = isPhotoCapture
 
-    override fun showChangeResolution() { /* ... unchanged ... */ }
-    override fun toggleFrontBackCamera() { /* ... unchanged ... */ }
-    override fun handleFlashlightClick() { /* ... unchanged ... */ }
-    override fun setFlashlightState(state: Int) { /* ... unchanged ... */ }
-    override fun tryTakePicture() { /* ... unchanged ... */ }
-    override fun initPhotoMode() { debounceChangeCameraMode(photoModeRunnable) }
+    override fun showChangeResolution() {
+        val selectedResolution = if (isPhotoCapture) {
+            imageQualityManager.getUserSelectedResolution(cameraSelector).toResolutionOption()
+        } else {
+            videoQualityManager.getUserSelectedQuality(cameraSelector).toResolutionOption()
+        }
 
+        val resolutions = if (isPhotoCapture) {
+            imageQualityManager.getSupportedResolutions(cameraSelector)
+                .map { it.toResolutionOption() }
+        } else {
+            videoQualityManager.getSupportedQualities(cameraSelector)
+                .map { it.toResolutionOption() }
+        }
+
+        if (resolutions.size > 2) {
+            listener.showImageSizes(
+                selectedResolution = selectedResolution,
+                resolutions = resolutions,
+                isPhotoCapture = isPhotoCapture,
+                isFrontCamera = isFrontCameraInUse()
+            ) { index, changed ->
+                mediaSizeStore.storeSize(isPhotoCapture, isFrontCameraInUse(), index)
+                if (changed) {
+                    currentRecording?.stop()
+                    startCamera()
+                }
+            }
+        } else {
+            toggleResolutions(resolutions)
+        }
+    }
+
+    private fun toggleResolutions(resolutions: List<ResolutionOption>) {
+        if (resolutions.size >= 2) {
+            val currentIndex =
+                mediaSizeStore.getCurrentSizeIndex(isPhotoCapture, isFrontCameraInUse())
+
+            val nextIndex = if (currentIndex >= resolutions.lastIndex) {
+                0
+            } else {
+                currentIndex + 1
+            }
+
+            mediaSizeStore.storeSize(isPhotoCapture, isFrontCameraInUse(), nextIndex)
+            currentRecording?.stop()
+            startCamera()
+        }
+    }
+
+    override fun toggleFrontBackCamera() {
+        val newCameraSelector = if (isFrontCameraInUse()) {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        } else {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        }
+
+        cameraSelector = newCameraSelector
+        config.lastUsedCameraLens = newCameraSelector.toLensFacing()
+        startCamera(switching = true)
+    }
+
+    override fun handleFlashlightClick() {
+        if (isPhotoCapture) {
+            listener.showFlashOptions(true)
+        } else {
+            toggleFlashlight()
+        }
+    }
+
+    private fun toggleFlashlight() {
+        val newFlashMode = if (isPhotoCapture) {
+            when (flashMode) {
+                FLASH_MODE_OFF -> FLASH_MODE_ON
+                FLASH_MODE_ON -> FLASH_MODE_AUTO
+                else -> FLASH_MODE_OFF
+            }
+        } else {
+            when (flashMode) {
+                FLASH_MODE_OFF -> FLASH_MODE_ON
+                else -> FLASH_MODE_OFF
+            }
+        }
+        setFlashlightState(newFlashMode.toAppFlashMode())
+    }
+
+    override fun setFlashlightState(state: Int) {
+        var flashState = state
+        if (isPhotoCapture) {
+            camera?.cameraControl?.enableTorch(flashState == FLASH_ALWAYS_ON)
+        } else {
+            camera?.cameraControl?.enableTorch(flashState == FLASH_ON || flashState == FLASH_ALWAYS_ON)
+            // reset to the FLASH_ON for video capture
+            if (flashState == FLASH_ALWAYS_ON) {
+                flashState = FLASH_ON
+            }
+        }
+        val newFlashMode = flashState.toCameraXFlashMode()
+        flashMode = newFlashMode
+        imageCapture?.flashMode = newFlashMode
+
+        config.flashlightState = flashState
+        listener.onChangeFlashMode(flashState)
+    }
+
+    override fun tryTakePicture() {
+        if (imageCapture == null) {
+            activity.toast(R.string.camera_open_error)
+            return
+        }
+
+        val imageCapture = imageCapture
+
+        val metadata = Metadata().apply {
+            isReversedHorizontal = isFrontCameraInUse() && config.flipPhotos
+            if (config.savePhotoVideoLocation) {
+                location = simpleLocationManager?.getLocation()
+            }
+        }
+
+        val mediaOutput = mediaOutputHelper.getImageMediaOutput()
+        imageCapture!!.takePicture(mainExecutor, object : OnImageCapturedCallback() {
+            override fun onCaptureSuccess(image: ImageProxy) {
+                listener.shutterAnimation()
+                playShutterSoundIfEnabled()
+                ensureBackgroundThread {
+                    image.use {
+                        if (mediaOutput is MediaOutput.BitmapOutput) {
+                            val imageBytes = ImageUtil.jpegImageToJpegByteArray(image)
+                            val bitmap = BitmapUtils.makeBitmap(imageBytes)
+                            activity.runOnUiThread {
+                                listener.onPhotoCaptureEnd()
+                                if (bitmap != null) {
+                                    listener.onImageCaptured(bitmap)
+                                } else {
+                                    cameraErrorHandler.handleImageCaptureError(ERROR_CAPTURE_FAILED)
+                                }
+                            }
+                        } else {
+                            ImageSaver.saveImage(
+                                contentResolver = contentResolver,
+                                image = image,
+                                mediaOutput = mediaOutput,
+                                metadata = metadata,
+                                jpegQuality = config.photoQuality,
+                                saveExifAttributes = config.savePhotoMetadata,
+                                onImageSaved = { savedUri ->
+                                    activity.runOnUiThread {
+                                        listener.onPhotoCaptureEnd()
+                                        listener.onMediaSaved(savedUri)
+                                    }
+                                },
+                                onError = ::handleImageCaptureError
+                            )
+                        }
+                    }
+                }
+            }
+
+            override fun onError(exception: ImageCaptureException) {
+                handleImageCaptureError(exception)
+            }
+        })
+    }
+
+    private fun handleImageCaptureError(exception: ImageCaptureException) {
+        listener.onPhotoCaptureEnd()
+        cameraErrorHandler.handleImageCaptureError(exception.imageCaptureError)
+    }
 
     fun toggleHorizonLock(enabled: Boolean) {
         if (horizonLockEnabled == enabled) return
