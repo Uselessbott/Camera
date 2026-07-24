@@ -1,3 +1,4 @@
+cat > app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt <<'EOF'
 package org.fossify.camera.implementations
 
 import android.annotation.SuppressLint
@@ -284,6 +285,7 @@ class CameraXPreview(
         val targetResolution = Size(resolution.width, resolution.height)
 
         val previewUseCase = buildPreview(targetResolution, rotation)
+        // captureUseCase is never null – we always bind either ImageCapture or VideoCapture
         val captureUseCase: UseCase = if (isPhotoCapture) {
             buildImageCapture(targetResolution, rotation).also {
                 imageCapture = it
@@ -316,6 +318,7 @@ class CameraXPreview(
         setupZoomAndFocus()
         setFlashlightState(config.flashlightState)
 
+        // Swap views when HL is active
         previewView.visibility = if (horizonLockEnabled) View.GONE else View.VISIBLE
         textureView?.visibility = if (horizonLockEnabled) View.VISIBLE else View.GONE
         Log.d(TAG, "bindCameraUseCases done, horizonLockEnabled=$horizonLockEnabled")
@@ -436,10 +439,8 @@ class CameraXPreview(
             override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
                 return camera?.cameraInfo?.let {
                     val display = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
-                    val targetView = if (horizonLockEnabled) textureView else previewView
-                    if (targetView == null) return@let false
-                    val width = targetView.width.toFloat()
-                    val height = targetView.height.toFloat()
+                    val width = previewView.width.toFloat()
+                    val height = previewView.height.toFloat()
                     val factory = DisplayOrientedMeteringPointFactory(display, it, width, height)
                     val autoFocusPoint = factory.createPoint(event.x, event.y, AF_SIZE)
                     val autoExposurePoint = factory.createPoint(event.x, event.y, AE_SIZE)
@@ -453,8 +454,7 @@ class CameraXPreview(
                 } ?: false
             }
         })
-        val targetView = if (horizonLockEnabled) textureView else previewView
-        targetView?.setOnTouchListener { _, event ->
+        previewView.setOnTouchListener { _, event ->
             val handledGesture = gestureDetector.onTouchEvent(event)
             val handledScaleGesture = scaleGesture?.onTouchEvent(event)
             handledGesture || handledScaleGesture ?: false
@@ -464,12 +464,10 @@ class CameraXPreview(
     override fun onStart(owner: LifecycleOwner) {
         orientationEventListener.enable()
         previewView.doOnLayout {
-            // Reinitialize Horizon Lock if it was released
-            if (horizonLockEnabled && horizonLockRenderer == null) {
-                initHorizonLock()
-            }
-            if (!horizonLockEnabled || horizonLockReady) {
-                startCamera()
+            if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                if (!horizonLockEnabled || horizonLockReady) {
+                    startCamera()
+                }
             }
         }
     }
@@ -506,17 +504,12 @@ class CameraXPreview(
     override fun onStop(owner: LifecycleOwner) {
         orientationEventListener.disable()
         if (horizonLockEnabled) {
-            // Stop any ongoing HL recording
-            horizonLockEncoder?.stop()
-            horizonLockEncoder = null
-            horizonLockRenderer?.setEncoderSurface(null)
-            horizonLockOutputFile = null
-
             horizonLockRenderer?.release()
             horizonLockRenderer = null
             sensorFusionManager?.stop()
             sensorFusionManager = null
             horizonLockReady = false
+            horizonLockOutputFile = null
         }
     }
 
@@ -821,3 +814,4 @@ class CameraXPreview(
         if (config.isSoundEnabled) mediaSoundHelper.playStopVideoRecordingSound()
     }
 }
+EOF

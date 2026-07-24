@@ -1,0 +1,185 @@
+diff --git a/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt b/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
+index 7d9d3e1..f2cdab8 100644
+--- a/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
++++ b/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
+@@ -411,6 +411,10 @@ class CameraXPreview(
+     override fun onStart(owner: LifecycleOwner) {
+         orientationEventListener.enable()
+         previewView.doOnLayout {
++            // Reinitialize Horizon Lock if it was released
++            if (horizonLockEnabled && horizonLockRenderer == null) {
++                initHorizonLock()
++            }
+             if (!horizonLockEnabled || horizonLockReady) {
+                 startCamera()
+             }
+@@ -419,26 +423,6 @@ class CameraXPreview(
+         if (horizonLockEnabled) {
+             // TextureView may not be available yet; start rendering when surface is ready
+-            textureView?.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+-                override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+-                    horizonLockRenderer?.setPreviewSurface(Surface(surface), width, height)
+-                }
+-                override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+-                    horizonLockRenderer?.setPreviewSurface(Surface(surface), width, height)
+-                }
+-                override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+-                    horizonLockRenderer?.clearPreviewSurface()
+-                    return true
+-                }
+-                override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+-            }
+         }
+     }
+ 
+@@ -449,6 +433,12 @@ class CameraXPreview(
+     override fun onStop(owner: LifecycleOwner) {
+         orientationEventListener.disable()
+         if (horizonLockEnabled) {
++            // Stop any ongoing HL recording
++            horizonLockEncoder?.stop()
++            horizonLockEncoder = null
++            horizonLockRenderer?.setEncoderSurface(null)
++            horizonLockOutputFile = null
++
+             horizonLockRenderer?.release()
+             horizonLockRenderer = null
+             sensorFusionManager?.stop()
+@@ -498,17 +488,25 @@ class CameraXPreview(
+                     val display = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
+-                    val width = previewView.width.toFloat()
+-                    val height = previewView.height.toFloat()
++                    val targetView = if (horizonLockEnabled) textureView else previewView
++                    if (targetView == null) return@let false
++                    val width = targetView.width.toFloat()
++                    val height = targetView.height.toFloat()
+                     val factory = DisplayOrientedMeteringPointFactory(display, it, width, height)
+@@ -518,7 +516,9 @@ class CameraXPreview(
+         })
+-        previewView.setOnTouchListener { _, event ->
++        val targetView = if (horizonLockEnabled) textureView else previewView
++        targetView?.setOnTouchListener { _, event ->
+             val handledGesture = gestureDetector.onTouchEvent(event)
+             val handledScaleGesture = scaleGesture?.onTouchEvent(event)
+diff --git a/app/src/main/java/com/fossify/camera/horizonlock/HorizonLockRenderer.kt b/app/src/main/java/com/fossify/camera/horizonlock/HorizonLockRenderer.kt
+index 6b8d7f4..f0e3a29 100644
+--- a/app/src/main/java/com/fossify/camera/horizonlock/HorizonLockRenderer.kt
++++ b/app/src/main/java/com/fossify/camera/horizonlock/HorizonLockRenderer.kt
+@@ -111,6 +111,7 @@ class HorizonLockRenderer(
+     }
+ 
+     fun setPreviewSurface(surface: Surface, width: Int, height: Int) {
++        if (isReleased) return
+         glHandler.post {
+             try {
+@@ -127,6 +128,7 @@ class HorizonLockRenderer(
+     }
+ 
+     fun clearPreviewSurface() {
++        if (isReleased) return
+         glHandler.post {
+@@ -136,6 +138,7 @@ class HorizonLockRenderer(
+     }
+ 
+     fun setEncoderSurface(surface: Surface?) {
++        if (isReleased) return
+         glHandler.post {
+             encoderEglSurface?.let { eglCore?.releaseSurface(it) }
+@@ -172,23 +175,48 @@ class HorizonLockRenderer(
+     }
+ 
+     private fun drawFrame() {
+-        val st = cameraSurfaceTexture ?: return
+         try {
+-            st.updateTexImage()
+-        } catch (_: RuntimeException) {
+-            return
++            val st = cameraSurfaceTexture ?: return
++            st.updateTexImage()
++            st.getTransformMatrix(textureTransformMatrix)
++
++            computeTransformedTexCoords(textureTransformMatrix)
++
++            val cosA = abs(cos(rollRad))
++            val sinA = abs(sin(rollRad))
++            val aspect = previewWidth.toFloat() / previewHeight.toFloat()
++
++            val scaleX = cosA + sinA / aspect
++            val scaleY = cosA + sinA * aspect
++            val cropScale = max(scaleX, scaleY)  // >= 1
++
++            Matrix.setIdentityM(viewMatrix, 0)
++            // Rotate around Z to counter device tilt
++            Matrix.setRotateM(rotationMatrix, 0, Math.toDegrees(-rollRad.toDouble()).toFloat(), 0f, 0f, 1f)
++            // Scale up to hide borders
++            Matrix.setIdentityM(scaleMatrix, 0)
++            Matrix.scaleM(scaleMatrix, 0, cropScale, cropScale, 1f)
++            // Combine: rotate then scale
++            Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
++            Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
++
++            val previewEgl = previewEglSurface
++            if (previewEgl != null) {
++                eglCore?.makeCurrent(previewEgl)
++                renderQuad()
++                eglCore?.setPresentationTime(previewEgl, System.nanoTime())
++                eglCore?.swapBuffers(previewEgl)
++            }
++
++            val encoderEgl = encoderEglSurface
++            if (encoderEgl != null) {
++                eglCore?.makeCurrent(encoderEgl)
++                renderQuad()
++                eglCore?.setPresentationTime(encoderEgl, System.nanoTime())
++                eglCore?.swapBuffers(encoderEgl)
++            }
++
++            eglCore?.makeNothingCurrent()
++        } catch (e: Exception) {
++            Log.e(TAG, "drawFrame error", e)
+         }
+-        st.getTransformMatrix(textureTransformMatrix)
+-
+-        computeTransformedTexCoords(textureTransformMatrix)
+-
+-        val cosA = abs(cos(rollRad))
+-        val sinA = abs(sin(rollRad))
+-        val aspect = previewWidth.toFloat() / previewHeight.toFloat()
+-
+-        val scaleX = cosA + sinA / aspect
+-        val scaleY = cosA + sinA * aspect
+-        val cropScale = max(scaleX, scaleY)  // >= 1
+-
+-        Matrix.setIdentityM(viewMatrix, 0)
+-        Matrix.setRotateM(rotationMatrix, 0, Math.toDegrees(-rollRad.toDouble()).toFloat(), 0f, 0f, 1f)
+-        Matrix.setIdentityM(scaleMatrix, 0)
+-        Matrix.scaleM(scaleMatrix, 0, cropScale, cropScale, 1f)
+-        Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
+-        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
+-
+-        val previewEgl = previewEglSurface
+-        if (previewEgl != null) {
+-            try {
+-                eglCore?.makeCurrent(previewEgl)
+-                renderQuad()
+-                eglCore?.setPresentationTime(previewEgl, System.nanoTime())
+-                eglCore?.swapBuffers(previewEgl)
+-            } catch (e: Exception) {
+-                Log.e(TAG, "drawFrame preview failed", e)
+-            }
+-        }
+-
+-        val encoderEgl = encoderEglSurface
+-        if (encoderEgl != null) {
+-            try {
+-                eglCore?.makeCurrent(encoderEgl)
+-                renderQuad()
+-                eglCore?.setPresentationTime(encoderEgl, System.nanoTime())
+-                eglCore?.swapBuffers(encoderEgl)
+-            } catch (e: Exception) {
+-                Log.e(TAG, "drawFrame encoder failed", e)
+-            }
+-        }
+-
+-        eglCore?.makeNothingCurrent()
+     }

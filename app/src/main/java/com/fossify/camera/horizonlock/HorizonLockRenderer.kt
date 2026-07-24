@@ -28,6 +28,7 @@ class HorizonLockRenderer(
         private const val TAG = "HorizonLockRenderer"
     }
 
+    // Dedicated GL thread
     private val glThread = HandlerThread("HorizonLockGL").apply { start() }
     private val glHandler = Handler(glThread.looper)
 
@@ -40,6 +41,7 @@ class HorizonLockRenderer(
     private var uMVPMatrix = 0
     private var uTexture = 0
 
+    // Matrices
     private val projectionMatrix = FloatArray(16)
     private val viewMatrix = FloatArray(16)
     private val rotationMatrix = FloatArray(16)
@@ -52,9 +54,11 @@ class HorizonLockRenderer(
     var mode: RollMode = RollMode.OFF
     var autoMaxAngle: Float = 30f
 
-    private var previewEglSurface: EGLSurface? = null
-    private var encoderEglSurface: EGLSurface? = null
-    private var previewWidth = 1      // avoid divide-by-zero
+    // EGL surfaces
+    private var previewEglSurface: EGLSurface? = null   // output to TextureView
+    private var encoderEglSurface: EGLSurface? = null   // optional encoder output
+
+    private var previewWidth = 1
     private var previewHeight = 1
 
     @Volatile
@@ -107,40 +111,39 @@ class HorizonLockRenderer(
         }
     """.trimIndent()
 
+    /**
+     * Initializes OpenGL resources on the GL thread.
+     * Calls [onReady] on the main thread with the camera [SurfaceTexture] when done.
+     */
     fun init(onReady: (SurfaceTexture) -> Unit) {
         glHandler.post {
             try {
                 eglCore = EglCore()
-                eglCore!!.initialize()
+                eglCore!!.initialize(recordable = false)  // no encoding context needed here
 
+                // Create a temporary surface to make context current
                 val tmpSurface = eglCore!!.createOffscreenSurface(1, 1)
                 eglCore!!.makeCurrent(tmpSurface)
+                Log.d(TAG, "EGL context current for init")
 
                 // Generate OES texture
                 val textures = IntArray(1)
                 GLES20.glGenTextures(1, textures, 0)
                 cameraTextureId = textures[0]
                 GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId)
-                GLES20.glTexParameteri(
-                    GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
-                )
-                GLES20.glTexParameteri(
-                    GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
-                )
-                GLES20.glTexParameteri(
-                    GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
-                )
-                GLES20.glTexParameteri(
-                    GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
-                )
+                GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+                GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
                 cameraSurfaceTexture = SurfaceTexture(cameraTextureId)
                 cameraSurfaceTexture!!.setOnFrameAvailableListener(
                     { onFrameAvailable() },
                     glHandler
                 )
+                Log.d(TAG, "SurfaceTexture created, onFrameAvailableListener set")
 
-                // Build shader program (validated)
+                // Build shader program (with validation)
                 program = buildProgram(vertexShaderCode, fragmentShaderCode)
                 aPosition = GLES20.glGetAttribLocation(program, "aPosition")
                 aTexCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
@@ -152,12 +155,13 @@ class HorizonLockRenderer(
                 if (uTexture == -1) Log.w(TAG, "uTexture not found")
 
                 checkGlError("init")
-
                 eglCore!!.makeNothingCurrent()
                 eglCore!!.releaseSurface(tmpSurface)
+                Log.d(TAG, "Renderer initialized successfully")
 
                 Handler(Looper.getMainLooper()).post { onReady(cameraSurfaceTexture!!) }
             } catch (e: Exception) {
+                Log.e(TAG, "Renderer init failed", e)
                 onError("HorizonLockRenderer init failed: ${e.message}")
                 Handler(Looper.getMainLooper()).post { release() }
             }
@@ -166,25 +170,40 @@ class HorizonLockRenderer(
 
     fun getCameraSurfaceTexture(): SurfaceTexture = cameraSurfaceTexture!!
 
+    /**
+     * Set the preview output surface (TextureView).
+     */
     fun setPreviewSurface(surface: Surface, width: Int, height: Int) {
+        if (isReleased) return
         glHandler.post {
-            previewEglSurface?.let { eglCore?.releaseSurface(it) }
-            previewEglSurface = eglCore?.createWindowSurface(surface)
-            previewWidth = width
-            previewHeight = height
-            Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
-            maybePostDraw()
+            try {
+                previewEglSurface?.let { eglCore?.releaseSurface(it) }
+                previewEglSurface = eglCore?.createWindowSurface(surface)
+                previewWidth = width
+                previewHeight = height
+                Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
+                Log.d(TAG, "Preview surface set: ${width}x${height}")
+                maybePostDraw()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to set preview surface", e)
+            }
         }
     }
 
     fun clearPreviewSurface() {
+        if (isReleased) return
         glHandler.post {
             previewEglSurface?.let { eglCore?.releaseSurface(it) }
             previewEglSurface = null
+            Log.d(TAG, "Preview surface cleared")
         }
     }
 
+    /**
+     * Optional encoder output surface.
+     */
     fun setEncoderSurface(surface: Surface?) {
+        if (isReleased) return
         glHandler.post {
             encoderEglSurface?.let { eglCore?.releaseSurface(it) }
             encoderEglSurface = if (surface != null) {
@@ -192,6 +211,7 @@ class HorizonLockRenderer(
             } else {
                 null
             }
+            Log.d(TAG, "Encoder surface updated")
         }
     }
 
@@ -205,43 +225,33 @@ class HorizonLockRenderer(
     }
 
     fun release() {
+        if (isReleased) return
+        isReleased = true
+        glHandler.removeCallbacksAndMessages(null)
         glHandler.post {
-            if (isReleased) return@post
-            isReleased = true
-            glHandler.removeCallbacksAndMessages(null)
-
-            eglCore?.makeNothingCurrent()
-            previewEglSurface?.let { eglCore?.releaseSurface(it) }
-            encoderEglSurface?.let { eglCore?.releaseSurface(it) }
-
-            // Detach from GL context safely
             try {
-                cameraSurfaceTexture?.detachFromGLContext()
-            } catch (_: RuntimeException) {
-                // Already detached or never attached
+                eglCore?.makeNothingCurrent()
+                previewEglSurface?.let { eglCore?.releaseSurface(it) }
+                encoderEglSurface?.let { eglCore?.releaseSurface(it) }
+
+                try {
+                    cameraSurfaceTexture?.detachFromGLContext()
+                } catch (_: RuntimeException) {}
+                cameraSurfaceTexture?.release()
+                cameraSurfaceTexture = null
+
+                GLES20.glDeleteTextures(1, intArrayOf(cameraTextureId), 0)
+                GLES20.glDeleteProgram(program)
+
+                eglCore?.release()
+                Log.d(TAG, "Renderer released")
+            } finally {
+                glThread.quitSafely()
             }
-            cameraSurfaceTexture?.release()
-            cameraSurfaceTexture = null
-
-            GLES20.glDeleteTextures(1, intArrayOf(cameraTextureId), 0)
-            GLES20.glDeleteProgram(program)
-
-            eglCore?.release()
-
-            // Clear state to help garbage collection
-            program = 0
-            cameraTextureId = 0
-            previewEglSurface = null
-            encoderEglSurface = null
-            eglCore = null
-
-            glThread.quitSafely()
         }
-        // Asynchronous quit – no UI thread blocking
     }
 
     private fun onFrameAvailable() {
-        Log.d(TAG, "Frame available")
         frameAvailable = true
         maybePostDraw()
     }
@@ -264,55 +274,51 @@ class HorizonLockRenderer(
     }
 
     private fun drawFrame() {
-        Log.d(TAG, "drawFrame()")
-        val st = cameraSurfaceTexture ?: return
         try {
+            val st = cameraSurfaceTexture ?: return
             st.updateTexImage()
-        } catch (_: RuntimeException) {
-            return
+            st.getTransformMatrix(textureTransformMatrix)
+
+            computeTransformedTexCoords(textureTransformMatrix)
+
+            val cosA = abs(cos(rollRad))
+            val sinA = abs(sin(rollRad))
+            val aspect = previewWidth.toFloat() / previewHeight.toFloat()
+
+            val scaleX = cosA + sinA / aspect
+            val scaleY = cosA + sinA * aspect
+            val cropScale = max(scaleX, scaleY)  // >= 1
+
+            Matrix.setIdentityM(viewMatrix, 0)
+            // Rotate around Z to counter device tilt
+            Matrix.setRotateM(rotationMatrix, 0, Math.toDegrees(-rollRad.toDouble()).toFloat(), 0f, 0f, 1f)
+            // Scale up to hide borders
+            Matrix.setIdentityM(scaleMatrix, 0)
+            Matrix.scaleM(scaleMatrix, 0, cropScale, cropScale, 1f)
+            // Combine: rotate then scale
+            Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
+            Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
+
+            val previewEgl = previewEglSurface
+            if (previewEgl != null) {
+                eglCore?.makeCurrent(previewEgl)
+                renderQuad()
+                eglCore?.setPresentationTime(previewEgl, System.nanoTime())
+                eglCore?.swapBuffers(previewEgl)
+            }
+
+            val encoderEgl = encoderEglSurface
+            if (encoderEgl != null) {
+                eglCore?.makeCurrent(encoderEgl)
+                renderQuad()
+                eglCore?.setPresentationTime(encoderEgl, System.nanoTime())
+                eglCore?.swapBuffers(encoderEgl)
+            }
+
+            eglCore?.makeNothingCurrent()
+        } catch (e: Exception) {
+            Log.e(TAG, "drawFrame error", e)
         }
-        st.getTransformMatrix(textureTransformMatrix)
-
-        computeTransformedTexCoords(textureTransformMatrix)
-
-        val cosA = abs(cos(rollRad))
-        val sinA = abs(sin(rollRad))
-        val aspect = previewWidth.toFloat() / previewHeight.toFloat()
-
-        // Aspect‑ratio–aware crop scale to eliminate black borders
-        // scaleX = how much the rotated width exceeds the original width
-        // scaleY = how much the rotated height exceeds the original height
-        val scaleX = cosA + sinA / aspect
-        val scaleY = cosA + sinA * aspect
-        val cropScale = max(scaleX, scaleY)  // must be >= 1 to cover the viewport
-
-        Matrix.setIdentityM(viewMatrix, 0)
-        // Rotate around Z to counter device tilt
-        Matrix.setRotateM(rotationMatrix, 0, Math.toDegrees(-rollRad.toDouble()).toFloat(), 0f, 0f, 1f)
-        // Scale up so the rotated image fills the viewport without black borders
-        Matrix.setIdentityM(scaleMatrix, 0)
-        Matrix.scaleM(scaleMatrix, 0, cropScale, cropScale, 1f)
-        // Combine: first rotate, then scale
-        Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
-        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
-
-        val previewEgl = previewEglSurface
-        if (previewEgl != null) {
-            eglCore?.makeCurrent(previewEgl)
-            renderQuad()
-            eglCore?.setPresentationTime(previewEgl, System.nanoTime())
-            eglCore?.swapBuffers(previewEgl)
-        }
-
-        val encoderEgl = encoderEglSurface
-        if (encoderEgl != null) {
-            eglCore?.makeCurrent(encoderEgl)
-            renderQuad()
-            eglCore?.setPresentationTime(encoderEgl, System.nanoTime())
-            eglCore?.swapBuffers(encoderEgl)
-        }
-
-        eglCore?.makeNothingCurrent()
     }
 
     private fun renderQuad() {
@@ -320,7 +326,7 @@ class HorizonLockRenderer(
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
 
-        val stride = 5 * 4  // 3 pos + 2 tex
+        val stride = 5 * 4
         vertexBuffer.position(0)
         GLES20.glEnableVertexAttribArray(aPosition)
         GLES20.glVertexAttribPointer(aPosition, 3, GLES20.GL_FLOAT, false, stride, vertexBuffer)
@@ -356,9 +362,7 @@ class HorizonLockRenderer(
     private fun buildProgram(vertexCode: String, fragmentCode: String): Int {
         val vertexShader = compileShader(GLES20.GL_VERTEX_SHADER, vertexCode)
         val fragmentShader = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentCode)
-        if (vertexShader == 0 || fragmentShader == 0) {
-            throw RuntimeException("Shader compilation failed")
-        }
+        if (vertexShader == 0 || fragmentShader == 0) throw RuntimeException("Shader compilation failed")
         val program = GLES20.glCreateProgram().also { prog ->
             if (prog == 0) throw RuntimeException("glCreateProgram failed")
             GLES20.glAttachShader(prog, vertexShader)
@@ -372,7 +376,6 @@ class HorizonLockRenderer(
                 throw RuntimeException("Program link failed: $log")
             }
         }
-        // Delete shaders after linking – no longer needed
         GLES20.glDeleteShader(vertexShader)
         GLES20.glDeleteShader(fragmentShader)
         return program
