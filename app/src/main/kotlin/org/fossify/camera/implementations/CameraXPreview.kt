@@ -84,7 +84,7 @@ import org.fossify.camera.helpers.MediaSoundHelper
 import org.fossify.camera.helpers.PinchToZoomOnScaleGestureListener
 import org.fossify.camera.helpers.SimpleLocationManager
 import org.fossify.camera.helpers.VideoQualityManager
-import org.fossify.camera.horizonlock.*
+import com.fossify.camera.horizonlock.*
 import org.fossify.camera.interfaces.MyPreview
 import org.fossify.camera.models.CaptureMode
 import org.fossify.camera.models.MediaOutput
