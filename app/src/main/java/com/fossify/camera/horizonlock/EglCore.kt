@@ -65,7 +65,7 @@ class EglCore {
     }
 
     fun setPresentationTime(eglSurface: EGLSurface, nsecs: Long) {
-        EGL14.eglPresentationTimeANDROID(display, eglSurface, nsecs)
+        android.opengl.EGLExt.eglPresentationTimeANDROID(display, eglSurface, nsecs)
     }
 
     fun releaseSurface(eglSurface: EGLSurface) {

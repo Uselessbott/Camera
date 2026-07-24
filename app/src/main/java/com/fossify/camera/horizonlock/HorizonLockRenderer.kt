@@ -1,6 +1,7 @@
 package com.fossify.camera.horizonlock
 
 import android.graphics.SurfaceTexture
+import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.Matrix
@@ -79,14 +80,16 @@ class HorizonLockRenderer {
     fun setPreviewSurface(surface: Surface, width: Int, height: Int) {
         outputWidth = width
         outputHeight = height
-        if (previewSurface != null) eglCore.releaseSurface(previewSurface!!)
+        val safePreview = previewSurface
+        if (safePreview != null) eglCore.releaseSurface(safePreview)
         previewSurface = eglCore.createWindowSurface(surface)
         Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
     }
 
     fun setEncoderSurface(surface: Surface?) {
-        if (encoderSurface != null) {
-            eglCore.releaseSurface(encoderSurface!!)
+        val safeEncoder = encoderSurface
+        if (safeEncoder != null) {
+            eglCore.releaseSurface(safeEncoder)
             encoderSurface = null
         }
         if (surface != null) {
@@ -105,7 +108,6 @@ class HorizonLockRenderer {
 
     fun drawFrame(timestampNanos: Long) {
         surfaceTexture?.updateTexImage()
-        // Compute crop factor: ensures no black borders after rotation
         val cosA = kotlin.math.abs(kotlin.math.cos(rollRad))
         val sinA = kotlin.math.abs(kotlin.math.sin(rollRad))
         val cropFactor = if (cosA + sinA > 0.001f) 1f / (cosA + sinA) else 1f
@@ -117,18 +119,20 @@ class HorizonLockRenderer {
         Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
 
-        if (previewSurface != null) {
-            eglCore.makeCurrent(previewSurface!!)
+        val safePreview = previewSurface
+        if (safePreview != null) {
+            eglCore.makeCurrent(safePreview)
             renderInternal()
-            eglCore.setPresentationTime(previewSurface!!, timestampNanos)
-            eglCore.swapBuffers(previewSurface!!)
+            eglCore.setPresentationTime(safePreview, timestampNanos)
+            eglCore.swapBuffers(safePreview)
         }
 
-        if (encoderSurface != null) {
-            eglCore.makeCurrent(encoderSurface!!)
+        val safeEncoder = encoderSurface
+        if (safeEncoder != null) {
+            eglCore.makeCurrent(safeEncoder)
             renderInternal()
-            eglCore.setPresentationTime(encoderSurface!!, timestampNanos)
-            eglCore.swapBuffers(encoderSurface!!)
+            eglCore.setPresentationTime(safeEncoder, timestampNanos)
+            eglCore.swapBuffers(safeEncoder)
         }
     }
 
@@ -170,8 +174,10 @@ class HorizonLockRenderer {
 
     fun release() {
         eglCore.makeNothingCurrent()
-        if (previewSurface != null) eglCore.releaseSurface(previewSurface!!)
-        if (encoderSurface != null) eglCore.releaseSurface(encoderSurface!!)
+        val safePreview = previewSurface
+        if (safePreview != null) eglCore.releaseSurface(safePreview)
+        val safeEncoder = encoderSurface
+        if (safeEncoder != null) eglCore.releaseSurface(safeEncoder)
         surfaceTexture?.release()
         GLES20.glDeleteTextures(1, intArrayOf(cameraTextureId), 0)
         GLES20.glDeleteProgram(program)

@@ -32,27 +32,26 @@ class HorizonLockEncoder(
 
     fun prepare(): Surface {
         // Video encoder
-        val videoFormat = MediaFormat.createVideoFormat(MediaFormat.MIME_TYPE_AVC, videoWidth, videoHeight)
+        val videoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, videoWidth, videoHeight)
         videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, videoBitRate)
         videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, videoFrameRate)
         videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
 
-        videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIME_TYPE_AVC)
+        videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         videoCodec.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         videoInputSurface = videoCodec.createInputSurface()
         videoCodec.start()
 
         // Audio encoder
-        val audioFormat = MediaFormat.createAudioFormat(MediaFormat.MIME_TYPE_AAC, audioSampleRate, audioChannels)
+        val audioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, audioSampleRate, audioChannels)
         audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, audioBitRate)
         audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
 
-        audioCodec = MediaCodec.createEncoderByType(MediaFormat.MIME_TYPE_AAC)
+        audioCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
         audioCodec.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         audioCodec.start()
 
-        // Muxer
         muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         isRunning = true
         return videoInputSurface!!
@@ -66,11 +65,9 @@ class HorizonLockEncoder(
     }
 
     private fun startAudioRecording() {
-        val minBufferSize = AudioRecord.getMinBufferSize(audioSampleRate, 
-            if (audioChannels == 1) android.media.AudioFormat.CHANNEL_IN_MONO else android.media.AudioFormat.CHANNEL_IN_STEREO,
-            android.media.AudioFormat.ENCODING_PCM_16BIT)
-        audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, audioSampleRate,
-            if (audioChannels == 1) android.media.AudioFormat.CHANNEL_IN_MONO else android.media.AudioFormat.CHANNEL_IN_STEREO,
+        val channelConfig = if (audioChannels == 1) android.media.AudioFormat.CHANNEL_IN_MONO else android.media.AudioFormat.CHANNEL_IN_STEREO
+        val minBufferSize = AudioRecord.getMinBufferSize(audioSampleRate, channelConfig, android.media.AudioFormat.ENCODING_PCM_16BIT)
+        audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, audioSampleRate, channelConfig,
             android.media.AudioFormat.ENCODING_PCM_16BIT, minBufferSize * 2)
         audioRecord?.startRecording()
 
