@@ -59,6 +59,9 @@ class HorizonLockRenderer {
     fun init() {
         eglCore = EglCore()
         eglCore.initialize()
+
+        val bootstrapSurface = eglCore.createOffscreenSurface(1, 1)
+        eglCore.makeCurrent(bootstrapSurface)
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         cameraTextureId = textures[0]
@@ -73,6 +76,9 @@ class HorizonLockRenderer {
         aTexCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
         uMVPMatrix = GLES20.glGetUniformLocation(program, "uMVPMatrix")
         uTexture = GLES20.glGetUniformLocation(program, "uTexture")
+
+        eglCore.makeNothingCurrent()
+        eglCore.releaseSurface(bootstrapSurface)
     }
 
     fun getCameraSurfaceTexture(): SurfaceTexture = surfaceTexture!!
