@@ -315,6 +315,7 @@ class CameraXPreview(
                         surfaceTexture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
                         val surface = Surface(surfaceTexture)
                         request.provideSurface(surface, ContextCompat.getMainExecutor(activity)) { _ ->
+                        Log.d("HorizonLock", "Providing camera surface")
                             surface.release()
                         }
                     }

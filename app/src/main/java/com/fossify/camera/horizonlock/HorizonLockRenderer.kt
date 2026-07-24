@@ -241,6 +241,7 @@ class HorizonLockRenderer(
     }
 
     private fun onFrameAvailable() {
+        Log.d(TAG, "Frame available")
         frameAvailable = true
         maybePostDraw()
     }
@@ -263,6 +264,7 @@ class HorizonLockRenderer(
     }
 
     private fun drawFrame() {
+        Log.d(TAG, "drawFrame()")
         val st = cameraSurfaceTexture ?: return
         try {
             st.updateTexImage()
