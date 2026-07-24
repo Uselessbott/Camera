@@ -248,13 +248,7 @@ class CameraXPreview(
                 bindCameraUseCases()
                 setupCameraObservers()
             } catch (e: Exception) {
-                e.printStackTrace()
-                Log.e("CameraXPreview", "Camera bind failed", e)
-
-                val errorMessage =
-                    if (switching) R.string.camera_switch_error
-                    else R.string.camera_open_error
-
+                val errorMessage = if (switching) R.string.camera_switch_error else R.string.camera_open_error
                 activity.toast(errorMessage)
             }
         }, mainExecutor)
