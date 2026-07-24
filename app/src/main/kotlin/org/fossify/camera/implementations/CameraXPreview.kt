@@ -675,7 +675,7 @@ class CameraXPreview(
         cameraErrorHandler.handleImageCaptureError(exception.imageCaptureError)
     }
 
-    fun toggleHorizonLock(enabled: Boolean) {
+    override override fun toggleHorizonLock(enabled: Boolean) {
         if (horizonLockEnabled == enabled) return
         horizonLockEnabled = enabled
         if (enabled) {
