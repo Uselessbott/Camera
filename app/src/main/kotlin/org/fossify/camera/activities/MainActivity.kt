@@ -405,7 +405,7 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
             toggleHorizonLock.setOnClickListener {
                 horizonLockEnabled = !horizonLockEnabled
                 toggleHorizonLock.isSelected = horizonLockEnabled
-                (mPreview as? CameraXPreview)?.toggleHorizonLock(horizonLockEnabled)
+                mPreview?.toggleHorizonLock(horizonLockEnabled)
             }
         }
 
