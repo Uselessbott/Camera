@@ -40,16 +40,7 @@ class EglCore {
 
     fun createWindowSurface(surface: Surface): EGLSurface {
         val surfaceAttribs = intArrayOf(EGL14.EGL_NONE)
-        val eglSurface =
-            EGL14.eglCreateWindowSurface(display, config, surface, surfaceAttribs, 0)
-
-        if (eglSurface == EGL14.EGL_NO_SURFACE) {
-            throw RuntimeException(
-                "eglCreateWindowSurface failed: 0x${Integer.toHexString(EGL14.eglGetError())}"
-            )
-        }
-
-        return eglSurface
+        return EGL14.eglCreateWindowSurface(display, config, surface, surfaceAttribs, 0)
     }
 
     fun createOffscreenSurface(width: Int, height: Int): EGLSurface {
@@ -58,25 +49,11 @@ class EglCore {
             EGL14.EGL_HEIGHT, height,
             EGL14.EGL_NONE
         )
-
-        val eglSurface =
-            EGL14.eglCreatePbufferSurface(display, config, surfaceAttribs, 0)
-
-        if (eglSurface == EGL14.EGL_NO_SURFACE) {
-            throw RuntimeException(
-                "eglCreatePbufferSurface failed: 0x${Integer.toHexString(EGL14.eglGetError())}"
-            )
-        }
-
-        return eglSurface
+        return EGL14.eglCreatePbufferSurface(display, config, surfaceAttribs, 0)
     }
 
     fun makeCurrent(eglSurface: EGLSurface) {
-        if (!EGL14.eglMakeCurrent(display, eglSurface, eglSurface, context)) {
-            throw RuntimeException(
-                "eglMakeCurrent failed: 0x${Integer.toHexString(EGL14.eglGetError())}"
-            )
-        }
+        EGL14.eglMakeCurrent(display, eglSurface, eglSurface, context)
     }
 
     fun makeNothingCurrent() {
