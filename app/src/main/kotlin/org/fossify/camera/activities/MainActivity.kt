@@ -43,7 +43,7 @@ import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
-import androidx.preference.PreferenceManager
+import android.preference.PreferenceManager
 
 class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, CameraXPreviewListener {
     private companion object {
