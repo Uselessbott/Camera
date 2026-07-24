@@ -511,6 +511,18 @@ class CameraXPreview(
     override fun setFlashlightState(state: Int) { /* ... unchanged ... */ }
     override fun tryTakePicture() { /* ... unchanged ... */ }
     override fun initPhotoMode() { debounceChangeCameraMode(photoModeRunnable) }
+
+    fun toggleHorizonLock(enabled: Boolean) {
+        if (horizonLockEnabled == enabled) return
+        horizonLockEnabled = enabled
+        // Stop existing rendering if disabling
+        if (!enabled) {
+            horizonLockRenderer?.release()
+            sensorFusionManager?.stop()
+        }
+        // Re-bind camera use cases with the new flag
+        startCamera()
+    }
     override fun initVideoMode() { debounceChangeCameraMode(videoModeRunnable) }
 
     private fun debounceChangeCameraMode(cameraModeRunnable: Runnable) {
