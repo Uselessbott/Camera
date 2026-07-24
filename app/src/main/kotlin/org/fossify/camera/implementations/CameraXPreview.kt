@@ -688,6 +688,10 @@ class CameraXPreview(
         }
         startCamera()
     }
+    override fun initPhotoMode() {
+        debounceChangeCameraMode(photoModeRunnable)
+    }
+
     override fun initVideoMode() { debounceChangeCameraMode(videoModeRunnable) }
 
     private fun debounceChangeCameraMode(cameraModeRunnable: Runnable) {
