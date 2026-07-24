@@ -64,6 +64,7 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
     private lateinit var mFocusCircleView: FocusCircleView
     private lateinit var mediaSoundHelper: MediaSoundHelper
     private var mPreview: MyPreview? = null
+    private var horizonLockEnabled = false
     private var mediaSizeToggleGroup: MaterialButtonToggleGroup? = null
     private var mPreviewUri: Uri? = null
     private var mIsHardwareShutterHandled = false
@@ -399,6 +400,13 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
             settings.setShadowIcon(R.drawable.ic_settings_vector)
             settings.setOnClickListener { launchSettings() }
             changeResolution.setOnClickListener { mPreview?.showChangeResolution() }
+
+            toggleHorizonLock.setShadowIcon(R.drawable.ic_horizon_lock_vector)
+            toggleHorizonLock.setOnClickListener {
+                horizonLockEnabled = !horizonLockEnabled
+                toggleHorizonLock.isSelected = horizonLockEnabled
+                (mPreview as? CameraXPreview)?.toggleHorizonLock(horizonLockEnabled)
+            }
         }
 
         shutter.setOnClickListener { shutterPressed() }
@@ -669,6 +677,7 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
             layoutTop.toggleTimer,
             layoutTop.toggleFlash,
             layoutTop.changeResolution,
+            layoutTop.toggleHorizonLock,
             shutter,
             layoutTop.settings,
             lastPhotoVideoPreview,
@@ -720,6 +729,7 @@ class MainActivity : SimpleActivity(), PhotoProcessor.MediaSavedListener, Camera
             layoutTop.changeResolution.isEnabled = enabled
             toggleCamera.isClickable = enabled
             layoutTop.toggleFlash.isClickable = enabled
+            layoutTop.toggleHorizonLock.isClickable = enabled
         }
     }
 

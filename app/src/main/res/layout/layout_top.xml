@@ -37,6 +37,17 @@
         android:padding="@dimen/normal_margin"
         tools:icon="@drawable/ic_photo_4x3_vector" />
 
+    
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/toggle_horizon_lock"
+        style="@style/Widget.App.Button.OutlineButton.IconOnly"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:contentDescription="Horizon Lock"
+        android:padding="@dimen/normal_margin"
+        app:icon="@drawable/ic_horizon_lock_vector" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/settings"
         style="@style/Widget.App.Button.OutlineButton.IconOnly"
