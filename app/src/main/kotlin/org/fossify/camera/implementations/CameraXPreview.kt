@@ -676,18 +676,56 @@ class CameraXPreview(
     }
 
     override fun toggleHorizonLock(enabled: Boolean) {
-        if (horizonLockEnabled == enabled) return
-        horizonLockEnabled = enabled
-        if (enabled) {
-            initHorizonLock()
-        } else {
-            horizonLockRenderer?.release()
-            horizonLockRenderer = null
-            sensorFusionManager?.stop()
-            sensorFusionManager = null
+        val trace = java.io.File(activity.filesDir, "horizon_trace.txt")
+
+        fun log(msg: String) {
+            trace.appendText(msg + "
+")
         }
-        startCamera()
+
+        try {
+            log("==== toggleHorizonLock ====")
+            log("enabled=$enabled")
+            log("current=$horizonLockEnabled")
+
+            if (horizonLockEnabled == enabled) {
+                log("Already in requested state")
+                return
+            }
+
+            horizonLockEnabled = enabled
+            log("State updated")
+
+            if (enabled) {
+                log("Calling initHorizonLock()")
+                initHorizonLock()
+                log("initHorizonLock() OK")
+            } else {
+                log("Releasing renderer")
+                horizonLockRenderer?.release()
+                horizonLockRenderer = null
+                sensorFusionManager?.stop()
+                sensorFusionManager = null
+                log("Release OK")
+            }
+
+            log("Calling startCamera()")
+            startCamera()
+            log("startCamera() returned")
+
+        } catch (t: Throwable) {
+            trace.appendText(
+                "
+===== CRASH =====
+" +
+                android.util.Log.getStackTraceString(t) +
+                "
+"
+            )
+            throw t
+        }
     }
+
     override fun initPhotoMode() {
         debounceChangeCameraMode(photoModeRunnable)
     }
