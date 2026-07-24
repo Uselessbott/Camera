@@ -1,0 +1,236 @@
+diff --git a/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt b/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
+index 5f3c3b7..1234567 100644
+--- a/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
++++ b/app/src/main/kotlin/org/fossify/camera/implementations/CameraXPreview.kt
+@@ -30,6 +30,7 @@ import android.view.View
+ import android.view.TextureView
+ import android.view.View
+ import android.view.GestureDetector.SimpleOnGestureListener
++import android.util.Log
+ import androidx.camera.core.Camera
+ import androidx.camera.core.CameraSelector
+ import androidx.camera.core.CameraState
+@@ -168,6 +169,7 @@ class CameraXPreview(
+     private var lastCameraStartTime = 0L
+     private var simpleLocationManager: SimpleLocationManager? = null
++    private var horizonLockOutputFile: File? = null
+ 
+     init {
+         bindToLifeCycle()
+@@ -179,18 +181,38 @@ class CameraXPreview(
+     private fun initHorizonLock() {
+         textureView = activity.findViewById(R.id.texture_preview)
+-        horizonLockRenderer = HorizonLockRenderer()
+-        horizonLockRenderer!!.init()
+-        sensorFusionManager = SensorFusionManager(activity)
+-        sensorFusionManager!!.rollLiveData.observe(activity) { roll ->
+-            horizonLockRenderer?.setRoll(roll)
++        horizonLockRenderer = HorizonLockRenderer { errorMsg ->
++            Log.e("HorizonLock", errorMsg)
++            activity.runOnUiThread {
++                activity.toast(R.string.camera_open_error)
++                toggleHorizonLock(false)
++            }
+         }
+-        sensorFusionManager!!.start()
++        horizonLockRenderer!!.init { surfaceTexture ->
++            horizonLockReady = true
++            textureView?.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
++                override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
++                    horizonLockRenderer?.setPreviewSurface(Surface(surface), width, height)
++                }
++                override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
++                    horizonLockRenderer?.setPreviewSurface(Surface(surface), width, height)
++                }
++                override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
++                    horizonLockRenderer?.clearPreviewSurface()
++                    return true
++                }
++                override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
++            }
++            sensorFusionManager = SensorFusionManager(activity)
++            sensorFusionManager!!.rollLiveData.observe(activity) { roll ->
++                horizonLockRenderer?.setRoll(roll)
++            }
++            sensorFusionManager!!.start()
++            if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
++                startCamera()
++            }
++        }
+     }
+ 
+     private fun bindToLifeCycle() {
+@@ -230,31 +252,28 @@ class CameraXPreview(
+         val targetResolution = Size(resolution.width, resolution.height)
+ 
+         val previewUseCase = buildPreview(targetResolution, rotation)
+-        val captureUseCase = getCaptureUseCase(targetResolution, rotation)
++        val captureUseCase = getCaptureUseCase(targetResolution, rotation)
+ 
+         cameraProvider.unbindAll()
+         camera = if (isFullSize) {
+             val metrics = windowMetricsCalculator.computeCurrentWindowMetrics(activity).bounds
+             val screenWidth = metrics.width()
+             val screenHeight = metrics.height()
+             val viewPort = ViewPort.Builder(Rational(screenWidth, screenHeight), rotation).build()
+ 
+-            val useCaseGroup = UseCaseGroup.Builder()
+-                .addUseCase(previewUseCase)
+-                .addUseCase(captureUseCase)
+-                .setViewPort(viewPort)
+-                .build()
++            val useCaseGroupBuilder = UseCaseGroup.Builder()
++                .addUseCase(previewUseCase)
++                .setViewPort(viewPort)
++            if (captureUseCase != null) {
++                useCaseGroupBuilder.addUseCase(captureUseCase)
++            }
++            val useCaseGroup = useCaseGroupBuilder.build()
+             cameraProvider.bindToLifecycle(activity, cameraSelector, useCaseGroup)
+         } else {
+-            cameraProvider.bindToLifecycle(activity, cameraSelector, previewUseCase, captureUseCase)
++            val useCases = listOfNotNull(previewUseCase, captureUseCase).toTypedArray()
++            cameraProvider.bindToLifecycle(activity, cameraSelector, *useCases)
+         }
+         preview = previewUseCase
+         setupZoomAndFocus()
+         setFlashlightState(config.flashlightState)
+ 
+-        // Horizon Lock UI setup
+-        if (horizonLockEnabled) {
+-            previewView.visibility = View.GONE
+-            textureView?.visibility = View.VISIBLE
+-            val surfaceTexture = horizonLockRenderer!!.getCameraSurfaceTexture()
+-            surfaceTexture.setDefaultBufferSize(targetResolution.width, targetResolution.height)
+-
+-            textureView?.surfaceTexture?.let { previewTexture ->
+-                previewTexture.setDefaultBufferSize(
+-                    targetResolution.width,
+-                    targetResolution.height
+-                )
+-
+-                horizonLockRenderer!!.setPreviewSurface(
+-                    android.view.Surface(previewTexture),
+-                    targetResolution.width,
+-                    targetResolution.height
+-                )
+-            }
+-
+-            // Start rendering loop driven by Choreographer
+-            startRenderingLoop()
+-        } else {
+-            previewView.visibility = View.VISIBLE
+-            textureView?.visibility = View.GONE
+-        }
++        if (horizonLockEnabled) {
++            previewView.visibility = View.GONE
++            textureView?.visibility = View.VISIBLE
++        } else {
++            previewView.visibility = View.VISIBLE
++            textureView?.visibility = View.GONE
++        }
+     }
+ 
+     private fun buildPreview(resolution: Size, rotation: Int): Preview {
+@@ -267,7 +286,7 @@ class CameraXPreview(
+                     if (horizonLockEnabled) {
+                         setSurfaceProvider { request ->
+                             val surfaceTexture = horizonLockRenderer!!.getCameraSurfaceTexture()
+                             surfaceTexture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
+                             val surface = Surface(surfaceTexture)
+-                            request.provideSurface(surface, renderingExecutor) { result -> }
++                            request.provideSurface(surface, ContextCompat.getMainExecutor(activity)) { _ ->
++                                surface.release()
++                            }
+                         }
+                     } else {
+                         setSurfaceProvider(previewView.surfaceProvider)
+@@ -312,14 +331,13 @@ class CameraXPreview(
+     }
+ 
+-    private fun getCaptureUseCase(resolution: Size, rotation: Int): UseCase {
++    private fun getCaptureUseCase(resolution: Size, rotation: Int): UseCase? {
+         return if (isPhotoCapture) {
+-            buildImageCapture(resolution, rotation).also {
++            buildImageCapture(resolution, rotation).also {
+                 imageCapture = it
+                 videoCapture = null
+             }
+         } else {
+-            if (horizonLockEnabled) {
+-                // No video capture use case; we'll encode via HorizonLockEncoder.
+-                // Return a dummy VideoCapture that never binds, or just a placeholder.
+-                // Actually we must return a UseCase, so we'll create a dummy that does nothing.
+-                imageCapture = null
+-                videoCapture = null
+-                // Return a no-op UseCase? CameraX requires at least one use case.
+-                // We'll simply not bind video capture; but we must return something for captureUseCase.
+-                // Instead, we'll avoid calling getCaptureUseCase when horizon lock is on and video mode.
+-                // So modify callers to not bind a capture use case.
+-                // For simplicity, return imageCapture (photo) as placeholder, it won't be used.
+-                buildImageCapture(resolution, rotation)
++            if (horizonLockEnabled) {
++                imageCapture = null
++                videoCapture = null
++                null   // video recording handled by HorizonLockEncoder
+             } else {
+                 buildVideoCapture().also {
+                     videoCapture = it
+@@ -740,21 +758,25 @@ class CameraXPreview(
+         if (horizonLockEnabled) {
+             // Horizon Lock recording using our encoder
+             if (horizonLockEncoder == null) {
+-                val outputFile = File(activity.cacheDir, "horizon_video_${System.currentTimeMillis()}.mp4")
+-                horizonLockEncoder = HorizonLockEncoder(outputFile, 1920, 1080, 30, 10_000_000)
++                horizonLockOutputFile = File(activity.cacheDir, "horizon_video_${System.currentTimeMillis()}.mp4")
++                horizonLockEncoder = HorizonLockEncoder(horizonLockOutputFile!!, 1920, 1080, 30, 10_000_000)
+                 val encoderSurface = horizonLockEncoder!!.prepare()
+-                horizonLockRenderer!!.setEncoderSurface(encoderSurface)
++                horizonLockRenderer?.setEncoderSurface(encoderSurface)
+                 horizonLockEncoder!!.start()
+                 listener.onVideoRecordingStarted()
+             } else {
+-                horizonLockEncoder!!.stop()
++                horizonLockEncoder?.stop()
+                 horizonLockEncoder = null
+-                horizonLockRenderer!!.setEncoderSurface(null)
++                horizonLockRenderer?.setEncoderSurface(null)
+                 listener.onVideoRecordingStopped()
+-                // Notify media saved (using the file path)
+-                listener.onMediaSaved(android.net.Uri.fromFile(File(activity.cacheDir, "horizon_video_*.mp4"))) // placeholder
++                horizonLockOutputFile?.let { file ->
++                    listener.onMediaSaved(android.net.Uri.fromFile(file))
++                }
++                horizonLockOutputFile = null
+             }
+             return
+         }
+ 
+         // Original CameraX recording logic
+         if (currentRecording == null || recordingState is VideoRecordEvent.Finalize) {
+@@ -780,6 +802,7 @@ class CameraXPreview(
+     override fun onStop(owner: LifecycleOwner) {
+         orientationEventListener.disable()
+         if (horizonLockEnabled) {
+             horizonLockRenderer?.release()
+             sensorFusionManager?.stop()
++            horizonLockOutputFile = null
+         }
+     }
+@@ -807,13 +830,3 @@ class CameraXPreview(
+         if (config.isSoundEnabled) mediaSoundHelper.playStopVideoRecordingSound()
+     }
+ 
+-    private fun startRenderingLoop() {
+-        val handler = Handler(Looper.getMainLooper())
+-        val choreographer = android.view.Choreographer.getInstance()
+-        val frameCallback = object : android.view.Choreographer.FrameCallback {
+-            override fun doFrame(frameTimeNanos: Long) {
+-                horizonLockRenderer?.drawFrame(frameTimeNanos)
+-                choreographer.postFrameCallback(this)
+-            }
+-        }
+-        handler.post { choreographer.postFrameCallback(frameCallback) }
+-    }
+-
+ }
