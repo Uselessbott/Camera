@@ -408,7 +408,6 @@ class HorizonLockRenderer(
             out += 2
         }
     }
-    }
 
     private fun buildProgram(vertexCode: String, fragmentCode: String): Int {
         val vertexShader = compileShader(GLES20.GL_VERTEX_SHADER, vertexCode)
