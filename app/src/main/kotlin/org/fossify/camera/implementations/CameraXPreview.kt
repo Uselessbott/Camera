@@ -204,6 +204,7 @@ class CameraXPreview(
                 activity.toast(R.string.camera_open_error)
                 toggleHorizonLock(false)
             }
+        horizonLockRenderer?.mode = RollMode.FULL
         }
         horizonLockRenderer!!.init { surfaceTexture ->
             horizonLockReady = true
