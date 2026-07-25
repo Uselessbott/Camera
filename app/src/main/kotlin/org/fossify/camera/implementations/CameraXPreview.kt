@@ -226,6 +226,7 @@ class CameraXPreview(
             }
             sensorFusionManager = SensorFusionManager(activity)
             sensorFusionManager!!.rollLiveData.observe(activity) { roll ->
+                Log.d(TAG, "Sensor roll = $roll")
                 horizonLockRenderer?.setRoll(roll)
             }
             sensorFusionManager!!.start()
@@ -711,10 +712,16 @@ class CameraXPreview(
     }
 
     override fun initPhotoMode() {
+        if (horizonLockEnabled) {
+            horizonLockRenderer?.clearPreviewSurface()
+        }
         debounceChangeCameraMode(photoModeRunnable)
     }
 
     override fun initVideoMode() {
+        if (horizonLockEnabled) {
+            horizonLockRenderer?.clearPreviewSurface()
+        }
         debounceChangeCameraMode(videoModeRunnable)
     }
 

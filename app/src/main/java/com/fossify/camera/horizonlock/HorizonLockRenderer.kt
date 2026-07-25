@@ -216,6 +216,7 @@ class HorizonLockRenderer(
     }
 
     fun setRoll(rollDegrees: Float) {
+        Log.d(TAG, "Renderer roll = $rollDegrees")
         val limited = when (mode) {
             RollMode.AUTO -> rollDegrees.coerceIn(-autoMaxAngle, autoMaxAngle)
             RollMode.FULL -> rollDegrees
@@ -307,6 +308,7 @@ class HorizonLockRenderer(
 
             Matrix.setIdentityM(viewMatrix, 0)
             // Rotate around Z to counter device tilt
+            Log.d(TAG, "Drawing with roll = ${Math.toDegrees(rollRad.toDouble())}")
             Matrix.setRotateM(rotationMatrix, 0, Math.toDegrees(-rollRad.toDouble()).toFloat(), 0f, 0f, 1f)
             // Scale up to hide borders
             Matrix.setIdentityM(scaleMatrix, 0)
