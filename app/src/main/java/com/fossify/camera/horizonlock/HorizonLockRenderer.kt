@@ -368,15 +368,46 @@ class HorizonLockRenderer(
     }
 
     private fun computeTransformedTexCoords(matrix: FloatArray) {
-        val src = floatArrayOf(0f, 0f, 0f, 1f, 1f, 0f, 1f, 1f)
-        var idx = 0
-        for (i in 0..3) {
-            val u = src[i * 2]
-            val v = src[i * 2 + 1]
-            transformedTexCoords[idx] = matrix[0] * u + matrix[4] * v + matrix[12]
-            transformedTexCoords[idx + 1] = matrix[1] * u + matrix[5] * v + matrix[13]
-            idx += 2
+        val src = floatArrayOf(
+            0f, 0f,
+            0f, 1f,
+            1f, 0f,
+            1f, 1f
+        )
+
+        var out = 0
+
+        for (i in 0 until 4) {
+            val x = src[i * 2]
+            val y = src[i * 2 + 1]
+
+            val tx =
+                matrix[0] * x +
+                matrix[4] * y +
+                matrix[8] * 0f +
+                matrix[12]
+
+            val ty =
+                matrix[1] * x +
+                matrix[5] * y +
+                matrix[9] * 0f +
+                matrix[13]
+
+            val tw =
+                matrix[3] * x +
+                matrix[7] * y +
+                matrix[11] * 0f +
+                matrix[15]
+
+            transformedTexCoords[out] =
+                if (tw != 0f) tx / tw else tx
+
+            transformedTexCoords[out + 1] =
+                if (tw != 0f) ty / tw else ty
+
+            out += 2
         }
+    }
     }
 
     private fun buildProgram(vertexCode: String, fragmentCode: String): Int {
