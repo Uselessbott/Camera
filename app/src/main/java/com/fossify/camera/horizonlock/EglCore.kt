@@ -86,7 +86,11 @@ class EglCore {
 
     fun makeCurrent(eglSurface: EGLSurface) {
         if (!EGL14.eglMakeCurrent(display, eglSurface, eglSurface, context)) {
-            throw RuntimeException("EGL error: eglMakeCurrent failed")
+            val error = EGL14.eglGetError()
+            throw RuntimeException(
+                "eglMakeCurrent failed: 0x${Integer.toHexString(error)} " +
+                "(display=$display, context=$context, surface=$eglSurface)"
+            )
         }
     }
 

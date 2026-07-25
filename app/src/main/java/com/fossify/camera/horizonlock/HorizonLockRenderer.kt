@@ -276,7 +276,23 @@ class HorizonLockRenderer(
     private fun drawFrame() {
         try {
             val st = cameraSurfaceTexture ?: return
+
+            val previewEgl = previewEglSurface
+            val encoderEgl = encoderEglSurface
+
+            if (previewEgl == null && encoderEgl == null) {
+                return
+            }
+
+            val activeSurface = previewEgl ?: encoderEgl!!
+
+            eglCore?.makeCurrent(activeSurface)
+
+            Log.d(TAG, "drawFrame(): updateTexImage()")
+
             st.updateTexImage()
+
+            Log.d(TAG, "drawFrame(): updateTexImage() OK")
             st.getTransformMatrix(textureTransformMatrix)
 
             computeTransformedTexCoords(textureTransformMatrix)
@@ -299,17 +315,19 @@ class HorizonLockRenderer(
             Matrix.multiplyMM(viewMatrix, 0, rotationMatrix, 0, scaleMatrix, 0)
             Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
 
-            val previewEgl = previewEglSurface
             if (previewEgl != null) {
-                eglCore?.makeCurrent(previewEgl)
+                if (previewEgl != activeSurface) {
+                    eglCore?.makeCurrent(previewEgl)
+                }
                 renderQuad()
                 eglCore?.setPresentationTime(previewEgl, System.nanoTime())
                 eglCore?.swapBuffers(previewEgl)
             }
 
-            val encoderEgl = encoderEglSurface
             if (encoderEgl != null) {
-                eglCore?.makeCurrent(encoderEgl)
+                if (encoderEgl != previewEgl) {
+                    eglCore?.makeCurrent(encoderEgl)
+                }
                 renderQuad()
                 eglCore?.setPresentationTime(encoderEgl, System.nanoTime())
                 eglCore?.swapBuffers(encoderEgl)
