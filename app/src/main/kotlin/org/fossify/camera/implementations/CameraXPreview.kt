@@ -713,14 +713,26 @@ class CameraXPreview(
 
     override fun initPhotoMode() {
         if (horizonLockEnabled) {
-            horizonLockRenderer?.clearPreviewSurface()
+            textureView?.surfaceTexture?.let { st ->
+                horizonLockRenderer?.setPreviewSurface(
+                    Surface(st),
+                    textureView!!.width,
+                    textureView!!.height
+                )
+            }
         }
         debounceChangeCameraMode(photoModeRunnable)
     }
 
     override fun initVideoMode() {
         if (horizonLockEnabled) {
-            horizonLockRenderer?.clearPreviewSurface()
+            textureView?.surfaceTexture?.let { st ->
+                horizonLockRenderer?.setPreviewSurface(
+                    Surface(st),
+                    textureView!!.width,
+                    textureView!!.height
+                )
+            }
         }
         debounceChangeCameraMode(videoModeRunnable)
     }
